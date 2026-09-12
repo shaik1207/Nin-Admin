@@ -13,7 +13,7 @@ const Login = () => {
   
   const [formData, setFormData] = useState({
     role: "customer",
-    identifier: "", // Replaced 'email' with 'identifier' to handle both email and counterName
+    identifier: "",
     password: "",
   });
 
@@ -38,67 +38,66 @@ const Login = () => {
     e.preventDefault();
     setIsLoading(true);
 
-    const loginRequest = async () => {
-      try {
-        // 1. Dynamically set endpoint and payload based on role
-        let endpoint = "";
-        let payload = {};
+    // 1. Prepare endpoint and payload safely
+    let endpoint = "";
+    let payload = {};
 
-        if (formData.role === "admin") {
-          endpoint = "/auth/admin/login";
-          payload = { email: formData.identifier, password: formData.password };
-        } else if (formData.role === "counter_staff") {
-          endpoint = "/auth/counter/login";
-          payload = { counterName: formData.identifier, password: formData.password };
-        } else {
-          endpoint = "/auth/user/login";
-          payload = { email: formData.identifier, password: formData.password };
-        }
+    if (formData.role === "admin") {
+      endpoint = "/auth/admin/login";
+      payload = { email: formData.identifier, password: formData.password };
+    } else if (formData.role === "counter_staff") {
+      endpoint = "/auth/counter/login";
+      payload = { counterName: formData.identifier, password: formData.password };
+    } else {
+      endpoint = "/auth/user/login";
+      payload = { email: formData.identifier, password: formData.password };
+    }
 
-        // 2. Use your custom apiCall utility
-        const data = await apiCall(endpoint, {
-          method: "POST",
-          body: JSON.stringify(payload),
-        });
+    try {
+      // 2. Initialize the API request promise
+      const loginPromise = apiCall(endpoint, {
+        method: "POST",
+        body: JSON.stringify(payload),
+      });
 
-        return data;
-      } catch (error) {
-        if (error.message === "Failed to fetch") {
-          throw new Error("Server is offline. Please check your backend.");
-        }
-        throw error;
+      // 3. Attach the promise to the UI toast strictly for visual feedback
+      toast.promise(loginPromise, {
+        loading: 'Authenticating securely...',
+        success: 'Login successful!',
+        error: (err) => err.message === "Failed to fetch" ? "Server is offline. Please check your backend." : err.message,
+      });
+
+      // 4. Await the actual data to process side effects safely
+      const data = await loginPromise;
+
+      // 5. Securely store credentials using optional chaining to prevent silent crashes
+      localStorage.setItem("authToken", data.token);
+      
+      if (formData.role === "counter_staff") {
+        localStorage.setItem("userRole", "counter_staff");
+        localStorage.setItem("userName", data.counter?.name || formData.identifier);
+      } else {
+        localStorage.setItem("userRole", data.user?.role || formData.role);
+        localStorage.setItem("userName", data.user?.name || formData.identifier);
       }
-    };
+      
+      // 6. Determine exact redirect path
+      const redirectPath = formData.role === 'admin' ? '/dashboard' : 
+                           formData.role === 'counter_staff' ? '/counter/dashboard' : '/menu';
+      
+      // 7. Execute navigation (Brief timeout allows the success toast to be read)
+      setTimeout(() => {
+        navigate(redirectPath, { replace: true });
+      }, 1000);
 
-    toast.promise(loginRequest(), {
-      loading: 'Authenticating securely...',
-      success: (data) => {
-        // 3. Store Data Globally
-        localStorage.setItem("authToken", data.token);
-        
-        if (formData.role === "counter_staff") {
-          localStorage.setItem("userRole", "counter_staff");
-          localStorage.setItem("userName", data.counter.name);
-        } else {
-          localStorage.setItem("userRole", data.user.role);
-          localStorage.setItem("userName", data.user.name);
-        }
-        
-        // 4. Redirect based on role
-        const redirectPath = formData.role === 'admin' ? '/dashboard' : 
-                             formData.role === 'counter_staff' ? '/counter/dashboard' : '/menu';
-        
-        setTimeout(() => navigate(redirectPath, { replace: true }), 1000);
-        
-        return "Login successful!";
-      },
-      error: (err) => err.message,
-    }).finally(() => {
+    } catch (error) {
+      console.error("Authentication check failed:", error);
+      // Note: No need to trigger another toast here, toast.promise already handled the UI error display
+    } finally {
       setIsLoading(false);
-    });
+    }
   };
 
-  // Dynamic UI labels based on role
   const isCounter = formData.role === "counter_staff";
 
   return (
