@@ -10,8 +10,6 @@ export const apiCall = async (endpoint, options = {}) => {
   };
 
   // CRITICAL FIX FOR IMAGE UPLOADS:
-  // If the body is FormData (used for file uploads), we MUST NOT set "Content-Type": "application/json".
-  // The browser will automatically set "Content-Type: multipart/form-data; boundary=..." for us.
   if (!(options.body instanceof FormData)) {
     headers["Content-Type"] = headers["Content-Type"] || "application/json";
   }
@@ -41,6 +39,13 @@ export const apiCall = async (endpoint, options = {}) => {
 
     return data;
   } catch (error) {
+    // ✅ INTERCEPT HARD NETWORK DROPS
+    // Prevents the app from treating an internet disconnect or proxy drop as a server data failure
+    if (error.name === 'TypeError' && error.message.includes('Failed to fetch')) {
+      console.error(`API Network Error [${endpoint}]: Connection refused or dropped.`);
+      throw new Error("Network connection lost. Please check your internet connection.");
+    }
+
     console.error(`API Error [${endpoint}]:`, error.message);
     throw error;
   }
