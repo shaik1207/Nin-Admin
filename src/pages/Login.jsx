@@ -38,10 +38,10 @@ const Login = () => {
     e.preventDefault();
     setIsLoading(true);
 
-    // 1. Prepare endpoint and payload safely
     let endpoint = "";
     let payload = {};
 
+    // ✅ FIXED: Explicitly mapping each role to its correct backend endpoint route
     if (formData.role === "admin") {
       endpoint = "/auth/admin/login";
       payload = { email: formData.identifier, password: formData.password };
@@ -54,23 +54,19 @@ const Login = () => {
     }
 
     try {
-      // 2. Initialize the API request promise
       const loginPromise = apiCall(endpoint, {
         method: "POST",
         body: JSON.stringify(payload),
       });
 
-      // 3. Attach the promise to the UI toast strictly for visual feedback
       toast.promise(loginPromise, {
         loading: 'Authenticating securely...',
         success: 'Login successful!',
         error: (err) => err.message === "Failed to fetch" ? "Server is offline. Please check your backend." : err.message,
       });
 
-      // 4. Await the actual data to process side effects safely
       const data = await loginPromise;
 
-      // 5. Securely store credentials using optional chaining to prevent silent crashes
       localStorage.setItem("authToken", data.token);
       
       if (formData.role === "counter_staff") {
@@ -81,18 +77,15 @@ const Login = () => {
         localStorage.setItem("userName", data.user?.name || formData.identifier);
       }
       
-      // 6. Determine exact redirect path
       const redirectPath = formData.role === 'admin' ? '/dashboard' : 
                            formData.role === 'counter_staff' ? '/counter/dashboard' : '/menu';
       
-      // 7. Execute navigation (Brief timeout allows the success toast to be read)
       setTimeout(() => {
         navigate(redirectPath, { replace: true });
       }, 1000);
 
     } catch (error) {
       console.error("Authentication check failed:", error);
-      // Note: No need to trigger another toast here, toast.promise already handled the UI error display
     } finally {
       setIsLoading(false);
     }
