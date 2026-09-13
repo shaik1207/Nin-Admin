@@ -21,24 +21,32 @@ import {
 
 const DAYS_OF_WEEK = ["Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday", "Sunday"];
 
+// Instant, offline-proof SVG fallback image (Zero network requests)
+const FALLBACK_IMAGE = 'data:image/svg+xml;charset=UTF-8,%3Csvg%20width%3D%22200%22%20height%3D%22200%22%20xmlns%3D%22http%3A%2F%2Fwww.w3.org%2F2000%2Fsvg%22%3E%3Crect%20width%3D%22200%22%20height%3D%22200%22%20fill%3D%22%23f3f4f6%22%2F%3E%3Ctext%20x%3D%2250%25%22%20y%3D%2250%25%22%20dominant-baseline%3D%22middle%22%20text-anchor%3D%22middle%22%20font-family%3D%22sans-serif%22%20font-size%3D%2214%22%20font-weight%3D%22bold%22%20fill%3D%22%239ca3af%22%3ENo%20Image%3C%2Ftext%3E%3C%2Fsvg%3E';
+
+const getImageUrl = (imagePath) => {
+  if (!imagePath) return "";
+  if (imagePath.startsWith("http") || imagePath.startsWith("data:")) return imagePath;
+  
+  const apiUrl = import.meta.env.VITE_API_URL || "http://localhost:5000/api";
+  const baseUrl = apiUrl.replace(/\/api$/, "");
+  return `${baseUrl}${imagePath.startsWith("/") ? "" : "/"}${imagePath}`;
+};
+
 export default function MenuManagement() {
   const [sidebarOpen, setSidebarOpen] = useState(true);
   
-  // Detect current day
   const today = new Date().toLocaleDateString('en-US', { weekday: 'long' });
   
-  // Primary Tabs (Days) & Secondary Filters
-  const [activeDayTab, setActiveDayTab] = useState(today); // Defaults to current day
+  const [activeDayTab, setActiveDayTab] = useState(today);
   const [selectedCategory, setSelectedCategory] = useState("All");
   const [searchQuery, setSearchQuery] = useState("");
   
-  // Data State
   const [foods, setFoods] = useState([]);
   const [categories, setCategories] = useState([]); 
   const [isLoading, setIsLoading] = useState(true);
   const [isSubmitting, setIsSubmitting] = useState(false);
   
-  // Modals State
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [editingId, setEditingId] = useState(null);
   const [deleteItem, setDeleteItem] = useState(null); 
@@ -47,15 +55,16 @@ export default function MenuManagement() {
     return new Date().toLocaleTimeString('en-IN', { hour: '2-digit', minute: '2-digit' });
   };
 
-  // Form State includes new 'day' field
   const [formData, setFormData] = useState({
     name: "",
     category: "", 
     price: "",
     time: getCurrentTime(),
     badge: "None",
-    day: "Everyday", // New field
+    day: "Everyday", 
     imageFile: null,
+    imageUrl: "", 
+    imagePreview: "", 
     existingImage: null, 
     status: "Available"
   });
@@ -73,7 +82,6 @@ export default function MenuManagement() {
       ]);
       
       setFoods(menuRes.data || []);
-      
       const activeCategories = (categoryRes.data || []).filter(cat => cat.status === 'Active');
       setCategories(activeCategories);
 
@@ -130,8 +138,10 @@ export default function MenuManagement() {
       price: "",
       time: getCurrentTime(),
       badge: "None",
-      day: activeDayTab === "All Items" ? "Everyday" : activeDayTab, // Default to the tab you are currently viewing
+      day: activeDayTab === "All Items" ? "Everyday" : activeDayTab, 
       imageFile: null,
+      imageUrl: "",
+      imagePreview: "",
       existingImage: null,
       status: "Available"
     });
@@ -146,20 +156,44 @@ export default function MenuManagement() {
       price: item.price,
       time: item.time,
       badge: item.badge || "None",
-      day: item.day || "Everyday", // Pre-fill day
+      day: item.day || "Everyday",
       imageFile: null, 
+      imageUrl: "",
+      imagePreview: getImageUrl(item.image), 
       existingImage: item.image, 
       status: item.status
     });
     setIsModalOpen(true);
   };
 
+  const handleImageFileChange = (e) => {
+    const file = e.target.files[0];
+    if (file) {
+      setFormData({
+        ...formData,
+        imageFile: file,
+        imageUrl: "", 
+        imagePreview: URL.createObjectURL(file) 
+      });
+    }
+  };
+
+  const handleImageUrlChange = (e) => {
+    const url = e.target.value;
+    setFormData({
+      ...formData,
+      imageUrl: url,
+      imageFile: null, 
+      imagePreview: url 
+    });
+  };
+
   const handleSaveProduct = async (e) => {
     e.preventDefault();
     setIsSubmitting(true);
 
-    if (!editingId && !formData.imageFile) {
-      toast.error("Please select a product image.");
+    if (!editingId && !formData.imageFile && !formData.imageUrl) {
+      toast.error("Please select a product image or provide an image URL.");
       setIsSubmitting(false);
       return;
     }
@@ -170,11 +204,13 @@ export default function MenuManagement() {
     data.append("price", formData.price);
     data.append("time", formData.time); 
     data.append("badge", formData.badge === "None" ? "" : formData.badge);
-    data.append("day", formData.day); // Sending day to backend
+    data.append("day", formData.day); 
     data.append("status", formData.status);
     
     if (formData.imageFile) {
       data.append("image", formData.imageFile); 
+    } else if (formData.imageUrl) {
+      data.append("image", formData.imageUrl); 
     }
 
     try {
@@ -186,7 +222,7 @@ export default function MenuManagement() {
       const response = await fetch(`${baseUrl}${endpoint}`, {
         method: method,
         headers: { "Authorization": `Bearer ${token}` },
-        body: data,
+        body: data, 
       });
 
       const result = await response.json();
@@ -194,7 +230,7 @@ export default function MenuManagement() {
 
       const savedItem = {
         ...result.data,
-        image: result.data.image.startsWith('http') ? result.data.image : `http://localhost:5000${result.data.image}`
+        image: result.data.image
       };
 
       if (editingId) {
@@ -213,17 +249,11 @@ export default function MenuManagement() {
     }
   };
 
-  // Enhanced Filter logic for Weekly Menu
   const filteredFoods = foods.filter(item => {
-    const itemDay = item.day || "Everyday"; // Fallback for old items
-    
-    // Day Matching
+    const itemDay = item.day || "Everyday"; 
     const matchesDay = activeDayTab === "All Items" || itemDay === activeDayTab || itemDay === "Everyday";
-    // Category Matching
     const matchesCategory = selectedCategory === "All" || item.category === selectedCategory;
-    // Search Matching
     const matchesSearch = item.name.toLowerCase().includes(searchQuery.toLowerCase());
-    
     return matchesDay && matchesCategory && matchesSearch;
   });
 
@@ -236,8 +266,6 @@ export default function MenuManagement() {
         <Navbar />
 
         <div className="p-6 sm:p-8 max-w-7xl mx-auto w-full">
-
-          {/* Header Section */}
           <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4 mb-6">
             <div>
               <h1 className="text-3xl font-black text-gray-900 tracking-tight flex items-center gap-3">
@@ -257,7 +285,6 @@ export default function MenuManagement() {
             </button>
           </div>
 
-          {/* Weekly Days Navigation */}
           <div className="bg-white rounded-[1.5rem] p-3 shadow-sm border border-gray-100 mb-6 overflow-hidden">
             <div className="flex items-center gap-2 overflow-x-auto scrollbar-hide pb-2 sm:pb-0">
               <button
@@ -292,7 +319,6 @@ export default function MenuManagement() {
             </div>
           </div>
 
-          {/* Secondary Filters: Category & Search */}
           <div className="flex flex-col sm:flex-row items-center justify-between gap-4 mb-6">
             <div className="relative w-full sm:w-64">
               <select
@@ -320,7 +346,6 @@ export default function MenuManagement() {
             </div>
           </div>
 
-          {/* Products List Table */}
           <div className="bg-white rounded-[1.5rem] shadow-sm border border-gray-100 overflow-hidden min-h-[400px]">
             {isLoading ? (
               <div className="flex flex-col items-center justify-center py-32 text-emerald-600">
@@ -355,9 +380,13 @@ export default function MenuManagement() {
                           <td className="p-4 sm:px-6 flex items-center gap-4">
                             <div className="w-12 h-12 rounded-xl bg-gray-100 overflow-hidden shrink-0 shadow-inner">
                               <img 
-                                src={food.image?.startsWith('http') ? food.image : `http://localhost:5000${food.image}`} 
+                                src={getImageUrl(food.image)} 
                                 alt={food.name} 
                                 className="w-full h-full object-cover group-hover:scale-105 transition-transform" 
+                                onError={(e) => { 
+                                  e.target.onerror = null; // Prevents infinite loop
+                                  e.target.src = FALLBACK_IMAGE; 
+                                }}
                               />
                             </div>
                             <div>
@@ -436,8 +465,8 @@ export default function MenuManagement() {
 
       {/* ================= ADD/EDIT PRODUCT MODAL ================= */}
       {isModalOpen && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-gray-900/40 backdrop-blur-sm animate-fade-in">
-          <div className="bg-white rounded-[2rem] shadow-2xl border border-gray-100 max-w-lg w-full p-6 sm:p-8 relative overflow-hidden">
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-gray-900/40 backdrop-blur-sm animate-fade-in overflow-y-auto">
+          <div className="bg-white rounded-[2rem] shadow-2xl border border-gray-100 max-w-lg w-full p-6 sm:p-8 relative overflow-hidden my-auto">
             
             <div className="flex justify-between items-center mb-6">
               <h3 className="text-xl font-black text-gray-900 tracking-tight flex items-center gap-2">
@@ -525,20 +554,55 @@ export default function MenuManagement() {
                 </div>
               </div>
 
+              {/* LIVE IMAGE PREVIEW SYSTEM */}
               <div>
-                <label className="block text-xs font-bold text-gray-500 uppercase tracking-wider mb-1.5 flex justify-between items-center">
-                  <span>Product Image</span>
-                  {editingId && !formData.imageFile && <span className="text-emerald-600 text-[10px]">Current image retained</span>}
-                </label>
-                <div className="relative">
-                  <ImageIcon className="absolute left-4 top-3.5 text-gray-400" size={18} />
-                  <input
-                    type="file"
-                    accept="image/*"
-                    onChange={(e) => setFormData({...formData, imageFile: e.target.files[0]})}
-                    className="w-full bg-gray-50 border border-gray-200 rounded-xl pl-11 pr-4 py-2.5 text-sm font-medium focus:outline-none focus:bg-white focus:ring-2 focus:ring-emerald-500/20 focus:border-emerald-500 transition-all file:mr-4 file:py-2 file:px-4 file:rounded-full file:border-0 file:text-xs file:font-bold file:bg-emerald-50 file:text-emerald-700 hover:file:bg-emerald-100"
-                  />
+                <label className="block text-xs font-bold text-gray-500 uppercase tracking-wider mb-2">Product Image</label>
+                <div className="flex gap-4 items-center bg-gray-50 p-3 rounded-2xl border border-gray-200">
+                  
+                  {/* Visual Preview Box */}
+                  <div className="w-20 h-20 rounded-xl border border-gray-200 bg-white overflow-hidden flex-shrink-0 flex items-center justify-center shadow-inner">
+                    {formData.imagePreview ? (
+                      <img 
+                        src={formData.imagePreview} 
+                        alt="Preview" 
+                        className="w-full h-full object-cover" 
+                        onError={(e) => {
+                          e.target.onerror = null;
+                          e.target.src = FALLBACK_IMAGE;
+                        }}
+                      />
+                    ) : (
+                      <ImageIcon className="text-gray-300" size={28} />
+                    )}
+                  </div>
+
+                  {/* Input Options (File or URL) */}
+                  <div className="flex-1 space-y-2">
+                    <input
+                      type="file"
+                      accept="image/*"
+                      onChange={handleImageFileChange}
+                      className="w-full text-xs font-medium focus:outline-none file:mr-3 file:py-1.5 file:px-3 file:rounded-full file:border-0 file:text-xs file:font-bold file:bg-emerald-100 file:text-emerald-700 hover:file:bg-emerald-200 cursor-pointer"
+                    />
+                    
+                    <div className="flex items-center gap-2 px-1">
+                      <div className="h-px bg-gray-300 flex-1"></div>
+                      <span className="text-[9px] uppercase font-bold text-gray-400 tracking-wider">OR URL</span>
+                      <div className="h-px bg-gray-300 flex-1"></div>
+                    </div>
+
+                    <input
+                      type="url"
+                      placeholder="https://example.com/image.jpg"
+                      value={formData.imageUrl}
+                      onChange={handleImageUrlChange}
+                      className="w-full bg-white border border-gray-200 rounded-lg px-3 py-1.5 text-xs font-medium focus:outline-none focus:ring-2 focus:ring-emerald-500/20 focus:border-emerald-500"
+                    />
+                  </div>
                 </div>
+                {editingId && !formData.imageFile && !formData.imageUrl && (
+                  <p className="text-[10px] text-emerald-600 font-bold mt-1.5 ml-1">✓ Current database image will be retained.</p>
+                )}
               </div>
 
               <div className="pt-4">
@@ -578,9 +642,13 @@ export default function MenuManagement() {
             <div className="bg-gray-50 border border-gray-100 rounded-2xl p-4 flex items-center gap-4 mb-8 text-left">
               <div className="w-14 h-14 rounded-xl bg-gray-200 overflow-hidden shrink-0 shadow-sm">
                 <img 
-                  src={deleteItem.image?.startsWith('http') ? deleteItem.image : `http://localhost:5000${deleteItem.image}`} 
+                  src={getImageUrl(deleteItem.image)} 
                   alt={deleteItem.name} 
                   className="w-full h-full object-cover" 
+                  onError={(e) => { 
+                    e.target.onerror = null;
+                    e.target.src = FALLBACK_IMAGE; 
+                  }}
                 />
               </div>
               <div>
